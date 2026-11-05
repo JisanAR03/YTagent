@@ -29,9 +29,9 @@ Work in the project folder. Use `python` (not `python3`). **Run every command on
 
 ## Step 1: look at YouTube
 - 1a: `python tools/collect.py suggest "<2-3 word seed>"` (a second seed if the first is thin).
-- 1b: `python tools/collect.py niche "<query>" -o research/<slug>-niche.json`, then `/yt-viral research/<slug>-niche.json`.
-- 1c: `python tools/collect.py comments <url>` on the one or two top outliers.
-- **If `collect.py` says yt-dlp is missing or failed, or a command is blocked by a permission prompt, or `/yt-viral` cannot run: do not work around it** (no other downloader, no running yt-dlp by hand, no scraping). Keep 1a only, and write in the brief which parts were skipped and the exact reason. Still finish.
+- 1b + 1c in ONE command: `python tools/collect.py niche "<query>" --keep gta --comments 2 -o research/<slug>-niche.json`. It searches YouTube, keeps only videos with "gta" in the title (change the `--keep` word if the game is not GTA), prints the **outlier table itself** (views divided by that channel's own median, with links) and reads the comments of the two most-viewed outliers, flagging the ones that look like requests. Take the multiples and the requests from its output. Use a short, plain query such as "gta 5 police chase".
+- If it prints "none: no channel had 4+ videos left", try one broader query. `/yt-viral research/<slug>-niche.json` is **optional** (it only adds a title-formula classification): if it needs a permission prompt or cannot run, skip it. That is not a failure and the table already exists.
+- **If `collect.py` says yt-dlp is missing or failed, or a command is blocked by a permission prompt: do not work around it** (no other downloader, no running yt-dlp by hand, no scraping). Keep 1a only, and write in the brief which parts were skipped and the exact reason. Still finish.
 - Use only numbers the tools printed. Quote multiples exactly. If a channel has fewer than 4 videos it was skipped by design; say so.
 
 ## What the CHECKPOINTS become when I am not there

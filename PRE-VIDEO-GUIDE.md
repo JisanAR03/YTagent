@@ -9,11 +9,12 @@ This guide does not choose your tests or your first videos. That is Phase 2. Thi
 ## Before the first run (once, about 5 minutes)
 
 1. **Open a new Claude Code session** in `D:\YTHELPER\gta-channel`. Commands are loaded when a session starts.
-2. **yt-dlp** (`tools\bin\yt-dlp.exe`, official release, checksum verified) powers steps 1b and 1c. It has **not been tested on live YouTube yet**: Claude was not allowed to run it during setup. `/pre-video` starts it by itself through `collect.py`, which the command pre-approves, so you may **not** be asked. If you do not want it used, delete the file: the routine then does step 1a only. If 1b or 1c fail, copy the error line and send it to Claude. To test it yourself first, run the 2-command smoke test below.
-3. **Fewer prompts (optional).** Paste the lines shown below this list under `allowed-tools:` in `.claude\commands\pre-video.md`. They let the command read your `voice.md` and run the plugin's scoring scripts without asking. Without them you approve 2-3 prompts per run, or the script is a neutral draft and the scores are labelled "manual estimate, tool not run".
-4. **Give Claude your real voice.** Put a few paragraphs of how you actually talk into `~/.claude/youtube/voice.md` ("How I actually talk"). Until then every script is a neutral draft.
+2. **Install the plugin (new machine or fresh clone only).** The skills `/yt-package`, `/yt-script`, `/yt-seo` and `/yt-viral` come from the `youtube-agent` plugin. This repo declares it in `.claude/settings.json`, but it is installed per machine. Claude Code should offer to install it when you open the folder. If it does not, run `/plugin marketplace add Jakeschincariol/youtube-agent-skill` and then `/plugin install youtube-agent@youtube-agent-skill`. Without it `/pre-video` still finishes, but titles, hooks and search text are written by hand and labelled "manual estimate".
+3. **yt-dlp** (`tools\bin\yt-dlp.exe`) reads public YouTube pages for steps 1b and 1c (search, outlier ranking, comments). It was tested on live YouTube. The `.exe` is not stored in this repo (it is git-ignored): on a new machine download `yt-dlp.exe` from github.com/yt-dlp/yt-dlp/releases into `tools\bin\`. `/pre-video` starts it by itself through `collect.py`, which the command pre-approves, so you may **not** be asked. If you do not want it used, delete the file: the routine then does step 1a only.
+4. **Fewer prompts (optional).** Paste the lines shown below this list under `allowed-tools:` in `.claude\commands\pre-video.md`. They let the command read your `voice.md` and run the plugin's scoring scripts without asking. Without them you approve 2-3 prompts per run, or the script is a neutral draft and the scores are labelled "manual estimate, tool not run".
+5. **Give Claude your real voice.** Put a few paragraphs of how you actually talk into `~/.claude/youtube/voice.md` ("How I actually talk"). Until then every script is a neutral draft.
 
-The lines for item 3 (copy them exactly, the stars are part of the rule):
+The lines for item 4 (copy them exactly, the stars are part of the rule):
 
 ```
   - Read(~/.claude/youtube/**)
@@ -25,15 +26,6 @@ The lines for item 3 (copy them exactly, the stars are part of the rule):
   - Bash(python *hookscore.py*)
   - Bash(python *swipe.py*)
 ```
-
-**Smoke test for steps 1b and 1c (optional, 2 minutes).** In your own terminal, in the project folder, with small numbers:
-
-```
-python tools\collect.py niche "gta 5 police chase" --channels 2 --videos 10 -o research\smoke-niche.json
-python tools\collect.py comments <any video url from that json file> --max 50
-```
-
-Paste the output to Claude. If it fails: an error about a **JavaScript runtime** is a known one-flag fix in `collect.py` (`--js-runtimes node`). "Sign in to confirm you're not a bot" is YouTube slowing you down, not a bug: wait and retry with smaller numbers. Anything else: send Claude the error line. Delete `research\smoke-niche.json` afterwards.
 
 ## Two ways to use it
 
@@ -77,9 +69,9 @@ It shows US-English results (your target audience). To see another country add `
 
 **1b. What already works** (needs yt-dlp in `tools/bin`)
 ```
-python tools/collect.py niche "gta 5 police chase test" -o research/<name>-niche.json
+python tools/collect.py niche "gta 5 police chase" --keep gta --comments 2 -o research/<name>-niche.json
 ```
-then in Claude Code: `/yt-viral research/<name>-niche.json`
+It searches YouTube, keeps only videos with "gta" in the title, prints the outlier table itself, and also reads the comments of the two most-viewed outliers (that covers step 1c too). Optional: `/yt-viral research/<name>-niche.json` adds a title-formula classification.
 
 It ranks every video by **how far it beat its own channel's usual views** (not by channel size). Read:
 - the top 5 and their multiple (2x or more is a signal)
@@ -103,7 +95,7 @@ All answers must be yes. If one is no, go back to step 1.
 
 - [ ] Fits a pillar: Experiment, Systems explained, Developer x AI, or a Short?
 - [ ] ONE clear question and ONE clear answer? (rule 3)
-- [ ] Can the **same test** be run again in GTA 6, with the same rules?
+- [ ] Is the test a **written procedure** (same steps, same metric) that you can re-run in GTA 6 after launch? Whether GTA 6 even has the feature is unknown until launch. That is not a fail: it becomes the question you ask then.
 - [ ] Fair test: same time of day, weather, place and vehicle class; repeat 5-10 times and use the average
 - [ ] Not news, a rumor, a leak, or a fake "secret"? No story spoilers in title/thumbnail?
 - [ ] Every GTA 6 fact you need is in `gta6-notes.md` (official source)? Unknown features phrased as a **question**, not a claim?
@@ -162,8 +154,8 @@ Next: record, then follow "Production pipeline" in `CLAUDE.md` (transcribe, roug
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | No PDF in `output\` | The brief was written but the PDF step failed | The brief is in `research\`. Run `uv run tools/make_pdf.py research/<name>.md`. If it still fails, close all Edge windows and retry |
-| "yt-dlp not found" / "yt-dlp failed" | Steps 1b/1c could not run | The PDF says what was skipped. Step 1a still works. Send Claude the error line |
-| Scores say "manual estimate, tool not run" | The plugin scripts were not allowed to run | Add the permission lines in "Before the first run", or approve the prompts |
+| "yt-dlp not found" / "yt-dlp failed" | Steps 1b/1c could not run | The PDF says what was skipped. Step 1a still works. "Sign in to confirm you're not a bot" means YouTube is slowing you down: wait a few minutes and retry with `--channels 3`. Anything else: send Claude the error line |
+| Scores say "manual estimate, tool not run" | The plugin scripts were not allowed to run, or the plugin is not installed | Add the permission lines in "Before the first run", or approve the prompts. On a fresh clone, install the plugin first (item 2) |
 | Script says "neutral draft, not my voice" | `voice.md` was empty or unreadable | Add your speech samples to `~/.claude/youtube/voice.md` |
 | Claude says NO-GO | Its recommendation on the plan, not a rule | Read the reason in the PDF. You decide |
 

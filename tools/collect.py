@@ -2,20 +2,29 @@
 """collect.py - read public YouTube data for pre-video research. Never logs in, never posts.
 
     python tools/collect.py suggest "gta 5 police"
-    python tools/collect.py niche "gta 5 police chase test" --channels 8 --videos 30 -o research/niche.json
+    python tools/collect.py niche "gta 5 police chase test" --keep gta --comments 2 -o research/niche.json
     python tools/collect.py comments https://www.youtube.com/watch?v=VIDEO_ID --max 300
 
 suggest   what people actually type into YouTube search (autocomplete). Standard library only.
-niche     finds the channels that rank for a query, pulls each one's recent videos, and writes the file
-          /yt-viral ranks: [{"channel","title","views","url","duration"}]. Needs yt-dlp.
+niche     finds the channels that rank for a query, pulls each one's recent videos, writes the file /yt-viral
+          reads ([{"channel","title","views","url","duration"}]) and prints the outliers itself: views divided
+          by that channel's own median (channels with 4+ videos). --keep gta drops off-topic videos (title
+          must contain a word); --min-views N (default 5000) ignores tiny videos in the table; --comments N
+          also reads the comments of the most-viewed outliers (videos with comments off are skipped). Needs yt-dlp.
 comments  a video's top comments plus the ones that look like requests ("can you test...?"). Needs yt-dlp.
 
 yt-dlp is looked for at tools/bin/yt-dlp.exe, then on PATH.
 """
-import argparse, json, os, re, shutil, subprocess, sys, time, urllib.parse, urllib.request
+import argparse, json, os, re, shutil, statistics, subprocess, sys, time, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REQUEST = re.compile(r"\b(can|could|would|will) you\b|\bplease\b|\btest\b|\btry\b|\bwhat if\b|\bhow (does|would|do)\b", re.I)
+SUGGEST = re.compile(r"\byou should\b|\bplease (do|make|try|test)\b|\b(do|make) (a|one|another) (video|part|test)\b|\bnext video\b", re.I)
+
+
+def is_request(text):
+    # a question with a request word ("can you test...?") or a plain suggestion ("you should try...")
+    return bool(REQUEST.search(text) and "?" in text) or bool(SUGGEST.search(text))
 
 
 def ytdlp(*args):
@@ -52,7 +61,23 @@ def suggest(seed, top, region):
         print("  " + s)
 
 
-def niche(query, n_channels, n_videos, out):
+def outliers(rows, min_videos=4):
+    """Each video's views divided by the median views of its own channel's videos, best first.
+    A channel with fewer than min_videos videos has no reliable median and is skipped."""
+    by_channel = {}
+    for r in rows:
+        by_channel.setdefault(r["channel"], []).append(r)
+    ranked = []
+    for vids in by_channel.values():
+        if len(vids) < min_videos:
+            continue
+        median = statistics.median(v["views"] for v in vids)
+        if median > 0:
+            ranked += [dict(v, median=median, multiple=v["views"] / median) for v in vids]
+    return sorted(ranked, key=lambda v: -v["multiple"])
+
+
+def niche(query, n_channels, n_videos, out, keep="", n_comments=0, min_views=5000):
     found = ytdlp("--flat-playlist", "-J", f"ytsearch{n_channels * 6}:{query}")
     channels = {}
     for e in found.get("entries", []):
@@ -73,24 +98,52 @@ def niche(query, n_channels, n_videos, out):
             rows.append({"channel": name, "title": e.get("title", ""), "views": e["view_count"],
                          "url": e.get("url") or "https://www.youtube.com/watch?v=" + e.get("id", ""),
                          "duration": e.get("duration")})
+    words = [w.strip().lower() for w in keep.split(",") if w.strip()]
+    if words:
+        before = len(rows)
+        rows = [r for r in rows if any(w in r["title"].lower() for w in words)]
+        print(f"  --keep {','.join(words)}: kept {len(rows)} of {before} videos", file=sys.stderr)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=1)
     print(f"{len(rows)} videos from {len(channels)} channels -> {out}")
-    print("next: /yt-viral " + out)
+    ranked = [v for v in outliers(rows) if v["views"] >= min_views]   # 63x on 1,700 views is noise, not a signal
+    print(f"\nOUTLIERS: views / that channel's own median views (2x or more is a signal; channels need 4+ videos; "
+          f"videos under {min_views:,} views are ignored)")
+    for v in ranked[:10]:
+        print(f"  {v['multiple']:5.1f}x {v['views']:>11,} vs {int(v['median']):>11,}  {v['channel'][:22]:<22} {v['title'][:70]}\n{'':>15}{v['url']}")
+    if not ranked:
+        print("  none: no channel had 4+ videos left after the filter")
+    print("optional: /yt-viral " + out + "   (also classifies the title formulas)")
+    # comments are only worth reading on videos people actually watched: the most-viewed of the 2x+ outliers
+    pool = [v for v in ranked if v["multiple"] >= 2] or ranked
+    picked = sorted(pool, key=lambda v: -v["views"])
+    done = 0
+    for v in picked[:n_comments * 3]:   # a few spares: some videos have comments turned off
+        if done >= n_comments:
+            break
+        try:
+            if comments(v["url"], 100):
+                done += 1
+        except SystemExit as e:   # yt-dlp failed on this one video: note it and move on
+            print(f"[skipped comments for {v['url']}: {e.code}]", file=sys.stderr)
 
 
 def comments(url, mx):
     data = ytdlp("--skip-download", "--write-comments", "--extractor-args", f"youtube:max_comments={mx}", "-J", url)
-    top = [c for c in data.get("comments", []) if c.get("parent") == "root"]
+    top = [c for c in (data.get("comments") or []) if c.get("parent") == "root"]   # null when comments are off
     print(f"\n{data.get('title', url)}\n{len(top)} top-level comments read\n")
+    if not top:
+        print("no comments to read (turned off for this video, or none yet)")
+        return 0
     print("MOST LIKED")
     for c in sorted(top, key=lambda c: -(c.get("like_count") or 0))[:10]:
         print(f"  {c.get('like_count') or 0:>6}  {c.get('text', '').strip()[:160]!r}")
-    asks = [c for c in top if REQUEST.search(c.get("text", "")) and "?" in c.get("text", "")]
+    asks = [c for c in top if is_request(c.get("text", ""))]
     print(f"\nLOOK LIKE REQUESTS ({len(asks)})  <- free video ideas")
     for c in sorted(asks, key=lambda c: -(c.get("like_count") or 0))[:20]:
         print(f"  {c.get('like_count') or 0:>6}  {c.get('text', '').strip()[:160]!r}")
+    return len(top)
 
 
 def main():
@@ -102,12 +155,15 @@ def main():
     n = sub.add_parser("niche"); n.add_argument("query")
     n.add_argument("--channels", type=int, default=8); n.add_argument("--videos", type=int, default=30)
     n.add_argument("-o", "--out", default="research/niche.json")
+    n.add_argument("--keep", default="", help="comma-separated words; keep only videos whose title contains one (e.g. gta)")
+    n.add_argument("--comments", type=int, default=0, help="also read the comments of the top N outliers")
+    n.add_argument("--min-views", type=int, default=5000, help="ignore videos below this many views in the outlier table")
     c = sub.add_parser("comments"); c.add_argument("url"); c.add_argument("--max", type=int, default=300)
     a = ap.parse_args()
     if a.cmd == "suggest":
         suggest(a.seed, a.top, a.region)
     elif a.cmd == "niche":
-        niche(a.query, a.channels, a.videos, a.out)
+        niche(a.query, a.channels, a.videos, a.out, a.keep, a.comments, a.min_views)
     else:
         comments(a.url, a.max)
 

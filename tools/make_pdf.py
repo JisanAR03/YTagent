@@ -37,17 +37,20 @@ li { margin: 2pt 0; }
 
 
 LIST_ITEM = re.compile(r"^\s*([-*+]|\d+[.)])\s+")
+TABLE_ROW = re.compile(r"^\s*\|")
 
 
-def blank_before_lists(text):
-    # Python-Markdown only starts a list after a blank line; GitHub and most editors do not need one.
+def blank_before_blocks(text):
+    # Python-Markdown only starts a list or a table after a blank line; GitHub and most editors do not need one.
     out, in_fence = [], False
     for line in text.split("\n"):
         if line.lstrip().startswith("```"):
             in_fence = not in_fence
-        elif not in_fence and out and LIST_ITEM.match(line):
+        elif not in_fence and out and out[-1].strip():
             prev = out[-1]
-            if prev.strip() and not LIST_ITEM.match(prev) and not prev.startswith((" ", "\t", ">")):
+            if LIST_ITEM.match(line) and not LIST_ITEM.match(prev) and not prev.startswith((" ", "\t", ">")):
+                out.append("")
+            elif TABLE_ROW.match(line) and not TABLE_ROW.match(prev):
                 out.append("")
         out.append(line)
     return "\n".join(out)
@@ -75,7 +78,7 @@ def main():
     text = src.read_text(encoding="utf-8")
     text = re.sub(r"^(\s*[-*] )\[ \]", lambda m: m.group(1) + "\u2610", text, flags=re.M)      # task-list boxes
     text = re.sub(r"^(\s*[-*] )\[[xX]\]", lambda m: m.group(1) + "\u2611", text, flags=re.M)
-    text = blank_before_lists(text)
+    text = blank_before_blocks(text)
     title = next((m.group(1) for m in re.finditer(r"^# (.+)$", text, re.M)), src.stem)
     body = markdown.markdown(text, extensions=["tables", "fenced_code", "sane_lists"])
     html = (f'<!doctype html><html><head><meta charset="utf-8"><title>{title}</title>'
