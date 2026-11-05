@@ -1,0 +1,18 @@
+{
+  "extraKnownMarketplaces": {
+    "youtube-agent-skill": {
+      "source": {
+        "source": "github",
+        "repo": "Jakeschincariol/youtube-agent-skill"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "youtube-agent@youtube-agent-skill": true
+  },
+  "env": {
+    "PYTHONUTF8": "1",
+    "UV_CACHE_DIR": "D:\\cache\\uv",
+    "HF_HOME": "D:\\cache\\huggingface"
+  }
+}

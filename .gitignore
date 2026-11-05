@@ -1,0 +1,9 @@
+# Third-party binaries. Download them again from the official releases:
+#   tools/bin/auto-editor.exe  github.com/WyattBlue/auto-editor/releases
+#   tools/bin/yt-dlp.exe       github.com/yt-dlp/yt-dlp/releases
+tools/bin/*.exe
+
+# Local-only files
+.claude/settings.local.json
+__pycache__/
+.edge-*/
